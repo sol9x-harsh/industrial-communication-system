@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AlertTriangle, Volume2, VolumeX } from 'lucide-react';
 
 interface EmergencyAlertProps {
@@ -10,35 +10,89 @@ interface EmergencyAlertProps {
 
 export function EmergencyAlert({ isActive, onStop }: EmergencyAlertProps) {
   const [isMuted, setIsMuted] = useState(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const oscillatorRef = useRef<OscillatorNode | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
 
-  // Simple audio buzz fallback
-  const playBuzz = () => {
-    try {
-      const audioContext = new (window.AudioContext ||
+  // Initialize audio context
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      audioContextRef.current = new (window.AudioContext ||
         (window as any).webkitAudioContext)();
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
+    }
 
+    return () => {
+      // Cleanup audio context
+      if (audioContextRef.current?.state !== 'closed') {
+        audioContextRef.current?.close();
+      }
+    };
+  }, []);
+
+  // Handle audio playback
+  useEffect(() => {
+    if (!isActive || isMuted) {
+      stopAudio();
+      return;
+    }
+
+    playBuzz();
+    const interval = setInterval(playBuzz, 700);
+
+    return () => {
+      clearInterval(interval);
+      stopAudio();
+    };
+  }, [isActive, isMuted]);
+
+  const playBuzz = () => {
+    if (!audioContextRef.current || isMuted) return;
+
+    try {
+      // Create oscillator
+      const oscillator = audioContextRef.current.createOscillator();
+      const gainNode = audioContextRef.current.createGain();
+
+      // Configure oscillator
+      oscillator.type = 'sawtooth';
+      oscillator.frequency.value = 600;
+
+      // Configure gain
+      gainNode.gain.value = 0.8;
+
+      // Connect nodes
       oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
+      gainNode.connect(audioContextRef.current.destination);
 
-      oscillator.frequency.value = 600; // Lower pitch = buzzy
-      oscillator.type = 'sawtooth'; // More harsh and buzzy than 'square'
-      gainNode.gain.value = isMuted ? 0 : 0.8; // Louder gain, closer to 110dB simulation
-
+      // Start oscillator
       oscillator.start();
-      oscillator.stop(audioContext.currentTime + 0.6); // Buzz for 600ms
+
+      // Store references for cleanup
+      oscillatorRef.current = oscillator;
+      gainNodeRef.current = gainNode;
+
+      // Schedule stop
+      oscillator.stop(audioContextRef.current.currentTime + 0.6);
     } catch (error) {
-      console.log('Audio not available');
+      console.error('Error playing buzz:', error);
     }
   };
 
-  useEffect(() => {
-    if (isActive && !isMuted) {
-      const interval = setInterval(playBuzz, 700);
-      return () => clearInterval(interval);
+  const stopAudio = () => {
+    if (oscillatorRef.current) {
+      try {
+        oscillatorRef.current.stop();
+      } catch (e) {
+        console.error('Error stopping oscillator:', e);
+      }
+      oscillatorRef.current = null;
     }
-  }, [isActive, isMuted]);
+
+    if (gainNodeRef.current) {
+      gainNodeRef.current.disconnect();
+      gainNodeRef.current = null;
+    }
+  };
 
   if (!isActive) return null;
 
