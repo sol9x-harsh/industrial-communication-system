@@ -5,50 +5,57 @@ import {
   Send,
   Volume2,
   Radio,
-  Zap,
+  Wifi,
+  WifiOff,
+  Clock,
+  AlertCircle,
+  Bell,
+  MessageSquare,
   AlertTriangle,
   CheckCircle,
   Settings,
-  Wifi,
+  Zap,
+  Users,
   Link,
-  WifiOff,
 } from 'lucide-react';
 import { SpeechToTextButton } from '@/components/SpeechToTextButton';
 import { useWebSocket } from '@/hooks/useWebSocket';
 
-const PREDEFINED_COMMANDS = [
+const MCR_COMMANDS = [
   {
     id: 'cmd1',
-    label: 'CONFIRM',
-    text: 'Task confirmed and completed successfully',
+    label: 'STATUS',
+    text: 'Requesting status update',
+    icon: CheckCircle,
+    color: 'blue',
+  },
+  {
+    id: 'cmd2',
+    label: 'ACKNOWLEDGE',
+    text: 'Message acknowledged',
     icon: CheckCircle,
     color: 'green',
   },
   {
-    id: 'cmd2',
-    label: 'MAINTENANCE',
-    text: 'Maintenance work completed',
-    icon: Settings,
-    color: 'blue',
-  },
-  {
     id: 'cmd3',
     label: 'ALERT',
-    text: 'Alert condition detected - assistance needed',
+    text: 'Attention required - non-emergency',
     icon: AlertTriangle,
     color: 'amber',
   },
   {
     id: 'cmd4',
     label: 'EMERGENCY',
-    text: 'EMERGENCY - Immediate assistance required',
+    text: 'EMERGENCY - Immediate action required',
     icon: Zap,
     color: 'red',
   },
 ];
 
-export default function RemoteDevice() {
-  const [deviceId, setDeviceId] = useState<'A' | 'B'>('A');
+export default function MCRRemote() {
+  const [deviceId, setDeviceId] = useState<'MCR-REMOTE' | 'A' | 'B'>(
+    'MCR-REMOTE'
+  );
   const [isDeviceConnected, setIsDeviceConnected] = useState(false);
   const [manualText, setManualText] = useState('');
   const [isTransmitting, setIsTransmitting] = useState(false);
@@ -64,17 +71,17 @@ export default function RemoteDevice() {
     registerDevice,
   } = useWebSocket();
 
-  // Filter messages for this device
+  // Filter messages for MCR remote
   const relevantMessages = messages
     .filter(
       (m) =>
-        m.channel === 'mcr-to-engine' ||
+        m.channel === 'engine-to-mcr' ||
+        m.channel === 'mcr-broadcast' ||
         m.channel === 'emergency-broadcast' ||
-        m.source === 'MCR' ||
-        m.source === `REMOTE-${deviceId === 'A' ? 'B' : 'A'}` ||
-        m.source === 'HANDHELD'
+        m.source === 'ENGINE-ROOM' ||
+        m.source === 'MCR-REMOTE'
     )
-    .slice(-6);
+    .slice(-8);
 
   // Check speech synthesis support
   const checkSpeechSupport = useCallback(() => {
@@ -90,8 +97,8 @@ export default function RemoteDevice() {
   const connectToNetwork = useCallback(() => {
     if (isConnected) {
       const deviceInfo = {
-        id: `REMOTE-${deviceId}`,
-        name: `Remote Device ${deviceId}`,
+        id: 'MCR-REMOTE',
+        name: 'MCR Remote Control',
         type: 'remote' as const,
         language,
       };
@@ -102,14 +109,14 @@ export default function RemoteDevice() {
       // Send connection message
       setTimeout(() => {
         sendMessage({
-          text: `Remote Device ${deviceId} connected to network`,
-          channel: 'device-status',
-          source: `REMOTE-${deviceId}`,
+          text: 'MCR Remote Control connected',
+          channel: 'mcr-broadcast',
+          source: 'MCR-REMOTE',
           type: 'normal',
         });
       }, 1000);
     }
-  }, [isConnected, deviceId, language, registerDevice, sendMessage]);
+  }, [isConnected, language, registerDevice, sendMessage]);
 
   // Disconnect from network
   const disconnectFromNetwork = useCallback(() => {
@@ -117,23 +124,31 @@ export default function RemoteDevice() {
     localStorage.removeItem('deviceInfo');
   }, []);
 
-  // Send message
+  // Send message from MCR remote
   const handleSendMessage = useCallback(
-    (text: string, type: 'emergency' | 'normal' = 'normal') => {
+    (text: string, type: 'emergency' | 'normal' | 'status' = 'normal') => {
       if (!text.trim() || !isDeviceConnected) return;
 
       setIsTransmitting(true);
 
+      // Use status channel for status messages, emergency for emergencies, and default to mcr-broadcast for normal
+      const channel =
+        type === 'emergency'
+          ? 'emergency-broadcast'
+          : type === 'status'
+          ? 'status-updates'
+          : 'mcr-broadcast';
+
       sendMessage({
         text: text.trim(),
-        channel: 'remote-broadcast',
-        source: `REMOTE-${deviceId}`,
-        type,
+        channel,
+        source: 'MCR-REMOTE',
+        type: 'normal',
       });
 
       setTimeout(() => setIsTransmitting(false), 500);
     },
-    [deviceId, isDeviceConnected, sendMessage]
+    [isDeviceConnected, sendMessage]
   );
 
   // Text to speech
@@ -179,11 +194,24 @@ export default function RemoteDevice() {
 
   // Send command message
   const sendCommandMessage = useCallback(
-    (command: (typeof PREDEFINED_COMMANDS)[0]) => {
+    (command: (typeof MCR_COMMANDS)[0]) => {
       const messageText = `${command.label}: ${command.text}`;
       handleSendMessage(
         messageText,
         command.id === 'cmd4' ? 'emergency' : 'normal'
+      );
+    },
+    [handleSendMessage]
+  );
+
+  // Acknowledge message
+  const acknowledgeMessage = useCallback(
+    (messageText: string) => {
+      handleSendMessage(
+        `ACK: ${messageText.substring(0, 20)}${
+          messageText.length > 20 ? '...' : ''
+        }`,
+        'status'
       );
     },
     [handleSendMessage]
@@ -244,11 +272,11 @@ export default function RemoteDevice() {
   if (!isDeviceConnected) {
     return (
       <div className='h-screen bg-gray-900 text-white flex items-center justify-center overflow-hidden'>
-        <div className='max-w-md mx-auto bg-gray-800 border-4 border-gray-600 rounded-lg shadow-2xl p-8'>
+        <div className='max-w-md mx-auto bg-gray-800 border-4 border-green-400 rounded-lg shadow-2xl p-8'>
           <div className='text-center'>
-            <Radio className='w-16 h-16 text-orange-400 mx-auto mb-4' />
-            <h1 className='text-2xl font-bold text-orange-400 mb-2'>
-              REMOTE-{deviceId}
+            <Radio className='w-16 h-16 text-green-400 mx-auto mb-4' />
+            <h1 className='text-2xl font-bold text-green-400 mb-2'>
+              MCR REMOTE CONTROL
             </h1>
 
             {/* Connection Status */}
@@ -337,8 +365,8 @@ export default function RemoteDevice() {
                   ? 'सर्वर से कनेक्ट हो रहा है...'
                   : 'CONNECTING TO SERVER...'
                 : language === 'hi-IN'
-                ? 'नेटवर्क से कनेक्ट करें'
-                : 'CONNECT TO NETWORK'}
+                ? 'एमसीआर नेटवर्क से कनेक्ट करें'
+                : 'CONNECT TO MCR NETWORK'}
             </button>
           </div>
         </div>
@@ -349,14 +377,14 @@ export default function RemoteDevice() {
   return (
     <div className='h-screen bg-gray-900 text-white overflow-hidden'>
       {/* Device Frame */}
-      <div className='max-w-md mx-auto bg-gray-800 border-4 border-gray-600 rounded-lg shadow-2xl h-full flex flex-col'>
+      <div className='max-w-md mx-auto bg-gray-800 border-4 border-green-500 rounded-lg shadow-2xl h-full flex flex-col'>
         {/* Header */}
-        <div className='bg-gray-700 p-2 border-b-4 border-orange-400 flex-shrink-0'>
-          <div className='flex items-center justify-between mb-3'>
+        <div className='bg-gray-700 p-3 border-b-4 border-green-400 flex-shrink-0'>
+          <div className='flex items-center justify-between mb-2'>
             <div className='flex items-center gap-2'>
-              <Radio className='w-6 h-6 text-orange-400' />
-              <h1 className='text-xl font-bold text-orange-400'>
-                REMOTE-{deviceId}
+              <Radio className='w-6 h-6 text-green-400' />
+              <h1 className='text-xl font-bold text-green-400'>
+                MCR REMOTE CONTROL
               </h1>
             </div>
             <div className='flex items-center gap-2'>
@@ -377,15 +405,35 @@ export default function RemoteDevice() {
             </div>
           </div>
 
-          {/* Connected Devices */}
-          <div className='text-xs text-gray-300'>
-            {language === 'hi-IN' ? 'जुड़े डिवाइस:' : 'Connected:'}{' '}
-            {connectedDevices.length}
-            {connectedDevices.length > 0 && (
-              <span className='ml-2'>
-                ({connectedDevices.map((d) => d.name).join(', ')})
-              </span>
-            )}
+          {/* Status Bar */}
+          <div className='flex items-center justify-between text-xs mt-2 mb-1'>
+            <div className='flex items-center gap-2 text-gray-300'>
+              <div className='flex items-center gap-1'>
+                <div
+                  className={`w-2 h-2 rounded-full ${
+                    isConnected ? 'bg-green-400' : 'bg-red-400'
+                  }`}
+                ></div>
+                {isConnected ? 'ONLINE' : 'OFFLINE'}
+              </div>
+              <span>•</span>
+              <div className='flex items-center gap-1'>
+                <MessageSquare className='w-3 h-3' />
+                {relevantMessages.length}
+              </div>
+              <span>•</span>
+              <div className='flex items-center gap-1'>
+                <Users className='w-3 h-3' />
+                {connectedDevices.length}
+              </div>
+            </div>
+            <div className='text-gray-400 font-mono text-xs'>
+              {new Date().toLocaleTimeString('en-US', {
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </div>
           </div>
 
           <div className='flex gap-2 mt-2'>
@@ -414,16 +462,39 @@ export default function RemoteDevice() {
 
         {/* Content */}
         <div className='p-2 space-y-2 flex-1 overflow-y-auto'>
-          {/* Voice Input */}
-          <div className='bg-gray-900 border-2 border-green-400/30 rounded-lg p-2'>
+          {/* Quick Commands */}
+          <div className='bg-gray-900 border-2 border-green-400/30 rounded-lg p-3 mb-3'>
             <h3 className='text-green-400 text-sm font-bold mb-3'>
-              {language === 'hi-IN' ? '🎙️ आवाज़ इनपुट' : '🎙️ VOICE INPUT'}
+              {language === 'hi-IN' ? '⚡ त्वरित आदेश' : '⚡ QUICK COMMANDS'}
             </h3>
-            <SpeechToTextButton
-              onTranscript={handleVoiceTranscript}
-              language={language}
-              disabled={isTransmitting || !isConnected}
-            />
+            <div className='grid grid-cols-2 gap-2'>
+              {MCR_COMMANDS.map((cmd) => {
+                const Icon = cmd.icon;
+                return (
+                  <button
+                    key={cmd.id}
+                    onClick={() => sendCommandMessage(cmd)}
+                    disabled={isTransmitting || !isConnected}
+                    className={`h-16 text-xs font-bold border-2 transition-all rounded flex flex-col items-center justify-center gap-1 ${
+                      cmd.color === 'green'
+                        ? 'bg-green-600 hover:bg-green-700 border-green-400 text-green-100'
+                        : cmd.color === 'blue'
+                        ? 'bg-blue-600 hover:bg-blue-700 border-blue-400 text-blue-100'
+                        : cmd.color === 'amber'
+                        ? 'bg-amber-600 hover:bg-amber-700 border-amber-400 text-amber-100'
+                        : 'bg-red-600 hover:bg-red-700 border-red-400 text-red-100'
+                    } ${
+                      isTransmitting || !isConnected
+                        ? 'opacity-50 cursor-not-allowed'
+                        : ''
+                    }`}
+                  >
+                    <Icon className='w-4 h-4' />
+                    <span>{cmd.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Manual Text Input */}
@@ -456,79 +527,89 @@ export default function RemoteDevice() {
             </div>
           </div>
 
-          {/* Predefined Commands */}
-          <div className='bg-gray-900 border-2 border-purple-400/30 rounded-lg p-2'>
-            <h3 className='text-amber-400 text-xs font-bold mb-2'>
-              {language === 'hi-IN' ? '🔘 त्वरित कमांड' : '🔘 QUICK COMMANDS'}
+          {/* Voice Input */}
+          <div className='bg-gray-900 border-2 border-blue-400/30 rounded-lg p-3 mb-3'>
+            <h3 className='text-blue-400 text-sm font-bold mb-3'>
+              {language === 'hi-IN' ? '🎙️ आवाज़ इनपुट' : '🎙️ VOICE INPUT'}
             </h3>
-            <div className='grid grid-cols-2 gap-2'>
-              {PREDEFINED_COMMANDS.map((cmd) => {
-                const Icon = cmd.icon;
-                return (
-                  <button
-                    key={cmd.id}
-                    onClick={() => sendCommandMessage(cmd)}
-                    disabled={isTransmitting || !isConnected}
-                    className={`h-16 text-xs font-bold border-2 transition-all rounded flex flex-col items-center justify-center gap-1 ${getColorClasses(
-                      cmd.color
-                    )} ${
-                      isTransmitting || !isConnected
-                        ? 'opacity-50 cursor-not-allowed'
-                        : ''
-                    }`}
-                  >
-                    <Icon className='w-4 h-4' />
-                    <span>
-                      {language === 'hi-IN' && cmd.id === 'cmd1'
-                        ? 'पुष्टि'
-                        : language === 'hi-IN' && cmd.id === 'cmd2'
-                        ? 'रखरखाव'
-                        : language === 'hi-IN' && cmd.id === 'cmd3'
-                        ? 'चेतावनी'
-                        : language === 'hi-IN' && cmd.id === 'cmd4'
-                        ? 'आपातकाल'
-                        : cmd.label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+            <SpeechToTextButton
+              onTranscript={handleVoiceTranscript}
+              language={language}
+              disabled={isTransmitting || !isConnected}
+            />
           </div>
 
           {/* Message History */}
-          <div className='bg-gray-900 border-2 border-amber-400/30 rounded-lg p-2'>
-            <h3 className='text-gray-400 text-sm font-bold mb-3'>
-              {language === 'hi-IN' ? 'संदेश इतिहास' : 'MESSAGE HISTORY'}
-            </h3>
-            <div className='space-y-1 max-h-[120px] overflow-y-auto'>
-              {relevantMessages.map((msg) => (
+          <div className='bg-gray-900 border-2 border-amber-400/30 rounded-lg p-3 flex-1 flex flex-col'>
+            <div className='flex justify-between items-center mb-3'>
+              <h3 className='text-amber-400 text-sm font-bold'>
+                {language === 'hi-IN'
+                  ? '📨 संदेश इतिहास'
+                  : '📨 MESSAGE HISTORY'}
+              </h3>
+              <div className='text-xs text-gray-400'>
+                {relevantMessages.length}{' '}
+                {language === 'hi-IN' ? 'संदेश' : 'messages'}
+              </div>
+            </div>
+            <div className='space-y-2 flex-1 overflow-y-auto'>
+              {relevantMessages.map((msg, index) => (
                 <div
-                  key={msg.id}
-                  className={`p-2 rounded border-2 text-xs ${
-                    msg.source === `REMOTE-${deviceId}`
+                  key={`${msg.id}-${index}`}
+                  className={`p-3 rounded-lg border-2 text-xs ${
+                    msg.source === 'MCR-REMOTE'
                       ? 'bg-green-900/30 border-green-400/30 text-green-300'
                       : msg.type === 'emergency'
                       ? 'bg-red-900/30 border-red-400/30 text-red-300'
                       : 'bg-blue-900/30 border-blue-400/30 text-blue-300'
                   }`}
                 >
-                  <div className='flex justify-between items-center mb-1'>
-                    <span className='text-xs opacity-70'>
-                      {msg.source} - {formatTime(msg.timestamp)}
-                    </span>
-                    <button
-                      onClick={() => speakText(msg.text)}
-                      disabled={!speechSupported}
-                      className='p-1 rounded hover:bg-white/10 disabled:opacity-50'
-                    >
-                      <Volume2 className='w-3 h-3' />
-                    </button>
+                  <div className='flex justify-between items-start mb-2'>
+                    <div>
+                      <div className='font-bold text-xs mb-1'>
+                        {msg.source === 'MCR-REMOTE'
+                          ? language === 'hi-IN'
+                            ? 'आप'
+                            : 'YOU'
+                          : msg.source}
+                        {msg.type === 'emergency' && (
+                          <span className='ml-2 text-red-300'>
+                            <AlertTriangle className='inline w-3 h-3' />
+                          </span>
+                        )}
+                      </div>
+                      <div className='text-xs opacity-70 mb-1'>
+                        {formatTime(msg.timestamp)}
+                      </div>
+                    </div>
+                    <div className='flex gap-1'>
+                      {msg.source !== 'MCR-REMOTE' && (
+                        <button
+                          onClick={() => acknowledgeMessage(msg.id)}
+                          disabled={isTransmitting || !isConnected}
+                          className='p-1 rounded hover:bg-white/10 disabled:opacity-50'
+                          title={
+                            language === 'hi-IN' ? 'पुष्टि करें' : 'Acknowledge'
+                          }
+                        >
+                          <CheckCircle className='w-3 h-3 text-green-400' />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => speakText(msg.text)}
+                        disabled={!speechSupported}
+                        className='p-1 rounded hover:bg-white/10 disabled:opacity-50'
+                        title={language === 'hi-IN' ? 'बोलें' : 'Speak'}
+                      >
+                        <Volume2 className='w-3 h-3' />
+                      </button>
+                    </div>
                   </div>
-                  <p className='font-mono'>{msg.text}</p>
+                  <p className='font-mono text-sm'>{msg.text}</p>
                 </div>
               ))}
               {relevantMessages.length === 0 && (
-                <div className='text-center text-gray-500 py-4 text-xs'>
+                <div className='h-full flex items-center justify-center text-center text-gray-500 py-4 text-xs'>
                   {language === 'hi-IN'
                     ? 'अभी तक कोई संदेश नहीं'
                     : 'No messages yet'}

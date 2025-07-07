@@ -256,18 +256,6 @@ export default function MainInterface() {
               ></div>
             </div>
 
-            {/* Voice Input Section */}
-            <div className='bg-gray-800 border-4 border-green-400/30 rounded-lg p-4 mb-4'>
-              <h3 className='text-green-400 text-lg font-bold mb-4'>
-                {language === 'hi-IN' ? '🎙️ आवाज़ इनपुट' : '🎙️ VOICE INPUT'}
-              </h3>
-              <SpeechToTextButton
-                onTranscript={handleVoiceTranscript}
-                language={language}
-                disabled={!isConnected}
-              />
-            </div>
-
             {/* Manual Text Input Section */}
             <div className='bg-gray-800 border-4 border-blue-400/30 rounded-lg p-4 mb-4'>
               <h3 className='text-blue-400 text-lg font-bold mb-4'>
